@@ -12,11 +12,19 @@ https://github.com/schochastics/graphlayouts
 https://github.com/hackl/tikz-network
 
 
-some IEEE datasets
-https://icseg.iti.illinois.edu/power-cases/
-
 annpotate points with rectangles
 https://ggforce.data-imaginist.com/reference/geom_mark_rect.html
+
+
+stplanr R package for transport
+https://docs.ropensci.org/stplanr/articles/stplanr-od.html
+
+Origin destination data for London
+http://passenger.data.tfl.gov.uk/
+
+Some bike share stuff that can be used. has data and code. Might only need projection
+https://urbandatacyclist.com/2018/03/15/predicting-route-preferences-in-bike-sharing/
+
 
 #Set up
 ```{r Setup}

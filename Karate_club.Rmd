@@ -10,7 +10,7 @@ editor_options:
 This markdown is an experiment with the zachery karate club
 
 ```{r}
-packages <- c("tidyverse", "igraph", "igraphdata", "minpack.lm")
+packages <- c("tidyverse", "igraph", "igraphdata", "minpack.lm", "ggraph")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -21,6 +21,8 @@ sapply(packages, library, character.only = TRUE)
 
 library(PowerGridNetworking)
 library(NetworkSpringEmbedding)
+
+Figures_path <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Spring_system_introduction_CASA/Figures"
 ```
 
 
@@ -30,8 +32,8 @@ The spring stiffness is
 
 ```{r}
 data("karate", package="igraphdata")
-Optimal partition and effective dynamics of complex networks
-shortest_list <-shortest_paths(karate, from = 1, to = 34, mode = "all" , weights = NA, output = "both")
+
+shortest_list <-shortest_paths(karate, from = 1, to = 34, mode = "all" , weights = get.edge.attribute(g, "weight"), output = "both")
 
 flow_df <- subgraph.edges(karate, test$epath[[1]]) %>% as_data_frame() %>% 
   mutate(routes = 1) %>% #trying to think how this can be generalised
@@ -51,7 +53,7 @@ karate_node_df <- as_data_frame(karate, what = "vertices") %>%
     TRUE ~0
   ))
 
-g <- graph_from_data_frame(karate_edge_df, directed = FALSE, vertices = karate_node_df) %>%
+g <- graph_from_data_frame(karate_edge_df, directed = FALSE, vertices = karate_node_df)  %>%
         set.edge.attribute(. , "distance", value = 1) %>%
         set.edge.attribute(., "Area", value = 1) %>%
         calc_spring_youngs_modulus(., "temporary_flow", "weight", minimum_value = 100, stretch_range = 1000) %>%
@@ -72,13 +74,29 @@ karate_SETS <- calculate_SET(g, force = "force",
               verbose = FALSE)
 
 
-nodes <- karate_SETS$node_embeddings
 
-edges <- karate_SETS$edge_embeddings
+#function that finds what fraction of the full range the metric is
+kappa <- function(value){
+  
+  (value-min(value))/(max(value)-min(value))
+  
+}
+
+
+nodes <- karate_SETS$node_embeddings %>%
+  mutate(z = kappa(z))
+
+edges <- karate_SETS$edge_embeddings %>% 
+  mutate(tension = kappa(tension),
+         strain = kappa(strain))
 
 strain_graph <- as_data_frame(g) %>%
   left_join(edges %>% select(edge_name, tension, strain)) %>%
-  graph_from_data_frame(., directed = FALSE, vertices = karate_node_df)
+  graph_from_data_frame(., directed = FALSE, 
+                        vertices = karate_node_df %>%
+  left_join(nodes %>% select(name = node, elevation = z))
+                        ) %>%
+        set.vertex.attribute(., "betweenness", value = betweenness(.))
 
 tree_strain <- hclust_graph(strain_graph, weight = "strain", method = "single")
 tree_tension <- hclust_graph(strain_graph, weight = "tension", method = "single")
@@ -94,9 +112,37 @@ check_groups <- tibble(name = names(cutree(tree_strain, k = 2)),
     TRUE ~ as.integer(3)
   ))
 
-plot(graph_from_data_frame( karate_edge_df, vertices = check_groups, directed = F))
 
 table(check_groups$Faction, check_groups$tension_group)
 
 table(check_groups$Faction, check_groups$strain_group)
+
 ```
+
+plot karate club
+```{r}
+
+set.seed(345)
+ggraph(strain_graph) + 
+    geom_edge_link2(aes(colour = tension), width = 0.7, edge_alpha =1) + 
+      geom_node_point( size = 3.6)+
+    geom_node_point(aes(colour = elevation, size = ifelse(name %in% c("Mr Hi", "John A"), 4, 3))) + 
+  scale_size_continuous(range = c(3, 6))+
+  scale_edge_colour_viridis() +
+   scale_color_viridis_c(option = "B") +
+  labs(title = "Node elevation and edge tension for the Zachery karate club") +
+  guides( size = "none")
+ggsave(file.path(Figures_path, "karate_embeddings.pdf"))
+
+set.seed(345)
+ggraph(strain_graph) + 
+    geom_edge_link2(aes(colour = tension), width = 0.7, edge_alpha =1) + 
+      geom_node_point( size = 3.6)+
+    geom_node_point(aes(colour = as.factor(Faction), size = ifelse(name %in% c("Mr Hi", "John A"), 4, 3))) + 
+  scale_size_continuous(range = c(3, 6))+
+  scale_edge_colour_viridis() +
+  labs(title = "Faction Allegiance and Edge tension for the Zachery karate club", colour = "Faction") +
+  guides( size = "none")
+ggsave(file.path(Figures_path, "karate_Faction.pdf"))
+```
+

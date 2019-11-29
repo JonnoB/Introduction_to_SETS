@@ -2191,25 +2191,12 @@ quintet_2 <- quintet %>%
   mutate_at(1:4, ~paste(component, ., sep = "_"))
 
 #edit the class_data_df so that it can produce multiple subcomponents
-class_data_df_2 <- LETTERS[1:5] %>% map_df(~{
+class_data_df_2 <- LETTERS[1:5] %>% 
+  map_df(~{
   class_data_df %>% mutate(val = .x) %>%
   mutate_at(c(1,3), ~paste(val, ., sep = "_"))
-}
-                          )
+})
 
-
-
-
-
-ggraph(test_g) +
-  geom_edge_fan()+
-  geom_node_point(aes(colour = class)) 
-
-test_g_2 <- create_assortivity_graph_from_subgroups(class_data_df_2, quintet_2, 10) %>%
-  set.vertex.attribute(., "class2", value = sub("([A-Z]_)","",get.vertex.attribute(. ,"class")))
-
-
-get.vertex.attribute(test_g_2)
 
 #set.seed so graphs are repeatable
 set.seed(1235)
@@ -2229,20 +2216,44 @@ quintet_g_list %>%
                       types = as.factor(get.vertex.attribute(quintet_g_list[[4]], "class")), 
                       directed = FALSE))
 
-
-
-ggraph(test_g_2) +
+ggraph(quintet_g_list[[5]]) +
   geom_edge_fan()+
-  geom_node_point(aes(colour = class2)) 
-  
+  geom_node_point(aes(colour = class), size = 3) +
+  guides(color = "none")
 
-test_g <- create_assortivity_graph_from_subgroups(class_data_df, quintet %>% rename(edges = "E"), 10)
-  
+#plotting these graphs requires cowplot
+library(cowplot)
 
-ggraph(quintet_g_list[[1]) +
+#create a list of the graph plots
+plot_list <- 1:5 %>%
+  map(~{ggraph(quintet_g_list[[.x]]) +
   geom_edge_fan()+
-  geom_node_point(aes(colour = class)) 
+  geom_node_point(aes(colour = class), size = 3) +
+  guides(color = "none") })
 
+plot_grid(plot_list[[1]],
+          plot_list[[2]],
+          plot_list[[3]],
+          plot_list[[4]],
+          plot_list[[5]],
+          # labels = c('Fig B','Fig C'),
+           # label_x = 0.2,
+          ncol = 3,
+          nrow = 2) +
+   draw_label("Socio-economic measures", type = "title") 
+
+ggdraw() + 
+  draw_label(
+    "Socio-economic measures",
+  ) + plot_grid(plot_list[[1]],
+          plot_list[[2]],
+          plot_list[[3]],
+          plot_list[[4]],
+          plot_list[[5]],
+          # labels = c('Fig B','Fig C'),
+           # label_x = 0.2,
+          ncol = 3,
+          nrow = 2)
 ```
 
 
@@ -2264,9 +2275,11 @@ node_change <- as_data_frame(g, what = "vertices") %>%
     Net_Generation = Generation-Demand) %>%
   select(name, everything())
 
- current_graph  <- graph_from_data_frame(edge_change, directed = FALSE, vertices = node_change) %>%
-    Calc_Spring_Youngs_Modulus(., "flow", "Link.Limit", minimum_value = 100, stretch_range = 1000) %>%
-    set.edge.attribute(., "Area", value = 1) 
+ current_graph  <- graph_from_data_frame(edge_change, directed = FALSE, vertices = node_change)%>%
+        set.edge.attribute(. , "distance", value = 1) %>%
+        set.edge.attribute(., "Area", value = 1) %>%
+        calc_spring_youngs_modulus(., "flow", "Link.Limit", minimum_value = 100, stretch_range = 1000) %>%
+        calc_spring_constant(., E ="E", A = "Area", distance = "distance") 
   
  return(current_graph)
 }
@@ -2299,7 +2312,7 @@ single_comp_networks <- .x[tot_comps==1]
 
 return(single_comp_networks[1:100])    
 
-  }) %>% flatten
+  }) %>% flatten()
 
 
 multi_quintet %>%
@@ -2348,7 +2361,8 @@ files <- list.files(file.path(PLwd, "Peels Quintet" ), full.names = TRUE)
 strain_solution_peel <-1:length(files) %>% map_df(~{
   NodeList <- read_rds(files[.x])$NodeList
   
-  Calc_line_strain(peels_spring_prep(multi_quintet[[.x]]), NodeList, "distance", "Link.Limit", "flow") %>%
+  peels_spring_prep(multi_quintet[[.x]]) %>%
+  calc_tension_strain(., NodeList, "distance", "Link.Limit", "flow", edge_name = "Link") %>%
     mutate(Network = str_split(basename(files[.x]), pattern = "_")[[1]][2],
            graph = str_split(basename(files[.x]), pattern = "_")[[1]][3] %>% gsub(".rds", "", .))
   
@@ -2371,7 +2385,7 @@ test <- strain_solution_peel %>%
 
  current_graph  <- g %>%
     set.edge.attribute(. , "distance", value = 1) %>%
-    Calc_Spring_Youngs_Modulus(., "PowerFlow", "Link.Limit", minimum_value = 100, stretch_range = 1000) %>%
+    calc_spring_youngs_modulus(., "PowerFlow", "Link.Limit", minimum_value = 100, stretch_range = 1000) %>%
     set.edge.attribute(., "Area", value = 1) %>%
   Normalize_load(., EdgeName = Link, VertexName = name, Net_Generation = BalencedPower, capacity = Link.Limit,
                          Generation = Generation, Demand = Demand)
@@ -2429,14 +2443,17 @@ peel_strain_sum <- strain_solution_peel %>%
   group_by(Network, graph) %>%
   summarise(mean_strain = mean(strain),
             median_strain = median(strain),
-            sd_strain = sd(strain)) %>%
+            sd_strain = sd(strain),
+            mean_tension = mean(tension),
+            median_tension = median(tension),
+            sd_tension = sd(tension)) %>%
   left_join(height_means_by_group %>%
               filter(class=="A"))
   left_join(height_means)
 
 
 peel_strain_sum %>%
-  ggplot(aes(y = mean, x = sd_strain, colour = Network)) +
+  ggplot(aes(y = mean, x = sd_tension, colour = Network)) +
   geom_density_2d() 
 ##########
 ##########
@@ -2448,13 +2465,16 @@ peel_strain_sum %>%
 ##########
 ##########
 peel_strain_sum %>%
-  ggplot(aes(x = mean_strain, y = mean, colour = Network)) + geom_point(alpha = 0.8) +
+  ggplot(aes(x = mean_tension, y = mean, colour = Network)) + geom_point(alpha = 0.8) +
   labs(title = "Separating Peel's quintet using embedded height and strain",
        x = "Mean edge strain",
        y = "Mean node height of class A")
   ggsave(file.path(FiguresFolder, "Seperating_Peels_quintet.pdf"))
 #This demonstrates that the algorithm is topologically sensitive.
 #Multiclass groups may be seperable using the 1 vs all method common in multiclass logitic regression, then seperating in a dimensional space equivalent to 2*(number of classes -1), that is beyond the scope of the paper.
+
+  #this file path is for casa presentation. delete after
+ggsave(file.path(Figures_path,  "Seperating_Peels_quintet.pdf"))
 
 #using the mean works pretty well, but using the median can't seperate A and B
 
@@ -2550,6 +2570,8 @@ acc_peel %>%
 ```{r}
 library(rsample)
 library(VGAM)
+library(class)
+library(yardstick)
 #create the dataset to test the nearest neighbours
 test <- peel_strain_sum %>% ungroup %>%
   select(mean_strain, mean_height = mean, Network) 
@@ -2570,7 +2592,7 @@ knn_holdout_results <- function(splits, k, ...) {
     # Save the 10%
   holdout <- assessment(splits)
     # Fit the model to the 90%
-    mod <- knn(train = train_df %>% select(-Network), 
+    mod <- class::knn(train = train_df %>% select(-Network), 
                cl = train_df$Network, 
                  test = holdout%>% select(-Network), k = k)
 
@@ -2617,16 +2639,22 @@ tibble(k = .x, accuracy =mean(test2$.estimate))
 })
 
 
+nearest_k_results %>%
+  ggplot(aes(x = k, y = accuracy )) + 
+  geom_line() +
+  labs(title = "The mean accuracy for 100 repeats of 10 fold cross validation for knn classifier", 
+       y = "mean accuracy",
+       x ="nearest neighbours")
+#this file path is for casa presentation. delete after
+ggsave(file.path(Figures_path, "knn_accuracy.pdf"))
+
+
 log_reg_results <-rs_obj$splits %>% map_df(~{
 test2 <- log_holdout_results(.x,  mod_form)
 
 tibble(accuracy =mean(test2$.estimate))
 
 })
-nearest_k_results %>%
-  ggplot(aes(x = k, y = accuracy )) + 
-  geom_line()
-
 
 #aggregate by the number of repeats
 boot_res <- log_reg_results %>%
